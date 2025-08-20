@@ -1,0 +1,394 @@
+#__________________________________________________________
+# Import Data
+#__________________________________________________________
+library(ggplot2)
+library(reshape2)
+data("Windarling", package="gmGeostats")
+Windarling
+class(Windarling)
+dim(Windarling)
+s1=Windarling$Easting
+s2=Windarling$Northing
+Fe = Windarling$Fe
+df=data.frame(cbind(Longitude=s1,Latitude=s2, Fe = Windarling$Fe))
+ggplot(df)+
+  geom_point(aes(Longitude,Latitude, color = Fe),size = 0.6) +
+  coord_fixed(ratio = 3) +
+  geom_vline(xintercept = c(0,100), linetype="dotted", linewidth=0.4)+
+  scale_color_gradientn(colours = colorRampPalette(c('red','skyblue','wheat'))(100)) +
+  labs(color="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+df=data.frame(Fe)
+ggplot(df,aes(x=Fe))+
+  geom_histogram(color="azure3",fill="burlywood1",binwidth = 0.005)+
+  geom_density(aes(y=0.005*..count..),color="lightskyblue4")+
+  labs(x="Fe Proportion",y="Frequency")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+ggplot(df) + 
+  geom_boxplot(aes(x="",y=Fe),width=0.8,color="lightskyblue4",fill="burlywood1")+
+  labs(x="",y="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+
+id=which(s1>=0&s1<=100)
+Fe0=Fe[id]
+min(Fe0)
+max(Fe0)
+s10=s1[id]
+s20=s2[id]
+df=data.frame(cbind(Longitude=s10,Latitude=s20,Fe0))
+ggplot(df)+
+  geom_point(aes(Longitude,Latitude, color = Fe0)) +
+  coord_fixed(ratio = 1.25) +
+  scale_color_gradientn(colours = colorRampPalette(c('red','skyblue','wheat'))(100)) +
+  labs(color="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+df=data.frame(Fe0)
+ggplot(df,aes(x=Fe0))+
+  geom_histogram(color="azure3",fill="skyblue",binwidth = 0.01)+
+  geom_density(aes(y=0.01*..count..),color="red")+
+  labs(x="Fe Proportion",y="Frequency")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+ggplot(df) + 
+  geom_boxplot(aes(x="",y=Fe0),width=0.8,color="red",fill="skyblue")+
+  labs(x="",y="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+x0 <- s10
+x1 <- s20
+s1 <- (x0 - min(x0))/(max(x0) - min(x0))
+s2 <- (x1 - min(x1))/(max(x1) - min(x1))
+
+#__________________________________________________________
+# Import Packages
+#__________________________________________________________
+
+library(nimble)
+library(scoringRules)
+library(readxl)
+
+CALC <- function(x, true.value){
+  n <- length(x)
+  Est <- mean(x)
+  Bias <- mean(x) - true.value
+  RBias <- (mean(x)/true.value)-1
+  RMSE <- mean(sqrt((x - true.value) ^ 2))
+  return(c(Estimate = Est, Bias = Bias, RBias=RBias , RMSE = RMSE))
+}
+
+n.itr=60000
+n.burn=40000
+n.thin=10
+
+
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+Output1 = Output2= Output3 =list()
+
+beta0.M1 = phi.M1 = sigma2.M1 = c()
+beta0.M2  = p.M2 = k.M2 = phi.M2 = sigma2.M2 = c()
+beta0.M3  = p.M3 = k.M3 = phi.M3 = sigma2.M3 = c()
+WAIC1 =  WAIC2 = WAIC3 = c()
+lppd1  = lppd2 = lppd3 = c() 
+pWAIC1  = pWAIC2 = pWAIC3 = c()
+LPML1 = LPML2 = LPML3 = c()
+DIC1 = DIC2 = DIC3 = c()
+
+for(t in 1:1){
+  y <- Fe0
+  
+  dists <- as.matrix(dist(cbind(s1, s2)))
+  Data <- list(y = y)
+  
+  expcov <- nimbleFunction(
+    run = function(dists = double(2), theta = double(0)) {
+      returnType(double(2))
+      n <- dim(dists)[1]
+      result <- matrix(nrow = n, ncol = n, init = FALSE)
+      for (i in 1:n) {
+        for (j in 1:n) {
+          result[i, j] <- exp(-dists[i, j] * theta)
+        }
+      }
+      return(result)
+    }
+  )
+  #__________________________________________________________
+  # Define Model 01 (Beta)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- beta0 + sqrt(sigma2)*W[i]
+      y[i] ~ dbeta(phi*mu[i], phi*(1 - mu[i]))
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    phi ~ dgamma(0.01, 0.01)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, phi=50, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out1 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 2, 
+                          monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  bayes.est1 = mcmc.out1$summary$all.chain$[c(1, 389, 390), ]
+  Output1[[t]] <- bayes.est1
+  beta0.M1[t] <- Output1[[t]][1, 1]
+  phi.M1[t] <- Output1[[t]][2, 1]
+  sigma2.M1[t] <- Output1[[t]][3, 1]
+  
+  
+  # WAIC
+  WAIC1[t] = mcmc.out1$WAIC$WAIC
+  lppd1[t] = mcmc.out1$WAIC$lppd
+  pWAIC1[t] = mcmc.out1$WAIC$pWAIC
+  
+  # LPML
+  mcmc.sample1 = (mcmc.out1$samples$chain1 + mcmc.out1$samples$chain2) / 2
+  Mu = mcmc.sample1[, 2:388]
+  n = length(y)
+  m = nrow(mcmc.sample1)
+  CPO = Density = c()
+  for(i in 1:n){
+    for(k in 1:m){
+      Density[k] = 1/dbeta(y[i], shape1 = phi.M1*Mu[k,i], shape2 = phi.M1*(1-Mu[k, i]))
+    }
+    CPO[i] = 1/mean(Density)
+  }
+  LPML1[t] = sum(log(CPO))
+  
+  # DIC
+  D = c()
+  for(k in 1:m){
+    D[k] = -2*sum(dbeta(y,shape1 = phi.M1*Mu[k,], shape2 = phi.M1*(1-Mu[k,]), log = TRUE))
+  }
+  D.bar_theta = mean(D)
+  Mu.bar = apply(Mu, 2, "mean")
+  D_theta.bar = -2*sum(dbeta(y, shape1 = phi.M1*Mu.bar, shape2 = phi.M1*(1-Mu.bar), log = TRUE))
+  DIC1[t] = 2*D.bar_theta - D_theta.bar
+  
+  # Testing  Convergence
+  
+  a1 = as.matrix(mcmc.out1$samples$chain1[, c(1, 389, 390)])
+  b1 = as.matrix(mcmc.out1$samples$chain2[, c(1, 389, 390)])
+  g1 = gelman.diag(list(mcmc(a1), mcmc(b1)))
+  #__________________________________________________________
+  # Define Model 02 (M-Beta) & indep
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- (1-B[i])*beta0 + sqrt(sigma2)*W[i]
+      U[i] <- pnorm(Z[i])
+      B[i] <- nimStep(p - U[i])
+      phis[i] <- B[i]*k*phi + (1 - B[i])*phi
+      y[i] ~ dbeta(phis[i]*mu[i], phis[i]*(1 - mu[i]))
+    }
+    
+    
+    # Gaussian Process
+    Sigma1[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma1[1:n, 1:n])
+    
+    Sigma2[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    Z[1:n] ~ dmnorm(zero[1:n], cov = Sigma2[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0 , var=100)
+    phi ~ dgamma(0.01, 0.01)
+    p ~ dunif(0, 1)
+    k ~ dunif(0, 1)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list( beta0 = 0, k=0.5, p = 0.5, phi = 1, sigma2 = 1, W = rep(0, Consts$n), Z = rep(0, Consts$n))
+  mcmc.out2 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 2,
+                          monitors = c('beta0', 'k', 'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  bayes.est2 = mcmc.out2$summary$all.chain$[c(1, 2, 390, 391, 779), ]
+  Output2[[t]] <- bayes.est2
+  beta0.M2[t] <- Output2[[t]][1, 1]
+  k.M2[t] <- Output2[[t]][2, 1]
+  p.M2[t] <- Output2[[t]][3, 1]
+  phi.M2[t] <- Output2[[t]][4, 1]
+  sigma2.M2[t] <- Output2[[t]][5, 1]
+  
+  # WAIC
+  WAIC2[t] = mcmc.out2$WAIC$WAIC
+  lppd2[t] = mcmc.out2$WAIC$lppd
+  pWAIC2[t] = mcmc.out2$WAIC$pWAIC
+  
+  
+  # LPML
+  mcmc.sample2 = (mcmc.out2$samples$chain1 + mcmc.out2$samples$chain2) / 2
+  Mu = mcmc.sample2[, 3:389]
+  Phis = mcmc.sample2[, 392:778] 
+  n = length(y)
+  m = nrow(mcmc.sample2)
+  
+  CPO = Density = c()
+  for(i in 1:n){
+    for(k in 1:m){
+      Density[k] = 1/dbeta(y[i], shape1 = Phis[k,i]*Mu[k,i], shape2 = Phis[k,i]*(1-Mu[k,i]))
+    }
+    CPO[i] = 1/mean(Density)
+  }
+  LPML2[t] = sum(log(CPO))
+  
+  Phis[2,]*Mu[2,]
+  # DIC
+  D = c()
+  for(k in 1:m){
+    D[k] = -2*sum(dbeta(y, shape1 = Phis[k,]*Mu[k,], shape2 = Phis[k,]*(1-Mu[k,]),log = TRUE))
+  }
+  D.bar_theta = mean(D)
+  Mu.bar = apply(Mu, 2, "mean")
+  Phis.bar = apply(Phis, 2, "mean")
+  D_theta.bar = -2*sum(dbeta(y, shape1 = Phis.bar*Mu.bar, shape2 = Phis.bar*(1-Mu.bar),log = TRUE))
+  DIC2[t] = 2*D.bar_theta - D_theta.bar
+  # Testing  Convergence
+  
+  a2 = as.matrix(mcmc.out2$samples$chain1[, c(1, 2, 390, 391, 779)])
+  b2 = as.matrix(mcmc.out2$samples$chain2[, c(1, 2, 390, 391, 779)])
+  g2 = gelman.diag(list(mcmc(a2), mcmc(b2)))
+  
+  
+  #__________________________________________________________
+  # Define Model 03 (M-Beta) & dep
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- (1-B[i])*beta0 + sqrt(sigma2)*(W[i]+H[i])
+      U[i] <- pnorm((Z[i]+H[i])/sqrt(2))
+      B[i] <- nimStep(p - U[i])
+      phis[i] <- B[i]*k*phi + (1 - B[i])*phi
+      y[i] ~ dbeta(phis[i]*mu[i], phis[i]*(1 - mu[i]))
+    }
+    
+    
+    # Gaussian Process
+    Sigma1[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma1[1:n, 1:n])
+    
+    Sigma2[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    Z[1:n] ~ dmnorm(zero[1:n], cov = Sigma2[1:n, 1:n])
+    
+    Sigma3[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    H[1:n] ~ dmnorm(zero[1:n], cov = Sigma3[1:n, 1:n])
+    
+    # Priors
+    beta0 ~ dnorm(0 , var=100)
+    phi ~ dgamma(0.01, 0.01)
+    p ~ dunif(0, 1)
+    k ~ dunif(0, 1)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list(beta0 = 0, k = 0.5, p = 0.5, phi = 1, sigma2 = 1, W = rep(0, Consts$n), Z = rep(0, Consts$n), H = rep(0, Consts$n))
+  mcmc.out3 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 2,
+                          monitors = c('beta0','k' ,'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  bayes.est3 = mcmc.out3$summary$all.chain$[c(1, 2, 390, 391, 779), ]
+  Output3[[t]] <- bayes.est3
+  beta0.M3[t] <- Output3[[t]][1, 1]
+  k.M3[t] <- Output3[[t]][2, 1]
+  p.M3[t] <- Output3[[t]][3, 1]
+  phi.M3[t] <- Output3[[t]][4, 1]
+  sigma2.M3[t] <- Output3[[t]][5, 1]
+  
+  
+  # WAIC
+  WAIC3[t] =  mcmc.out3$WAIC$WAIC
+  lppd3[t] = mcmc.out3$WAIC$lppd
+  pWAIC3[t] = mcmc.out3$WAIC$pWAIC
+  
+  
+  # LPML
+  mcmc.sample3 = (mcmc.out3$samples$chain1 + mcmc.out3$samples$chain2) / 2
+  Mu = mcmc.sample3[, 3:389]
+  Phis = mcmc.sample3[, 392:778]
+  n = length(y)
+  m = nrow(mcmc.sample3)
+  
+  CPO = Density = c()
+  for(i in 1:n){
+    for(k in 1:m){
+      Density[k] = 1/dbeta(y[i], shape1 = Phis[k,i]*Mu[k,i], shape2 = Phis[k,i]*(1-Mu[k,i]))
+    }
+    CPO[i] = 1/mean(Density)
+  }
+  LPML3[t] = sum(log(CPO))
+  
+  
+  # DIC
+  D = c()
+  for(k in 1:m){
+    D[k] = -2*sum(dbeta(y, shape1 = Phis[k,]*Mu[k,], shape2 = Phis[k,]*(1-Mu[k,]),log = TRUE))
+  }
+  D.bar_theta = mean(D)
+  Mu.bar = apply(Mu, 2, "mean")
+  Phis.bar = apply(Phis, 2, "mean")
+  D_theta.bar = -2*sum(dbeta(y, shape1 = Phis.bar*Mu.bar, shape2 = Phis.bar*(1-Mu.bar),log = TRUE))
+  DIC3[t] = 2*D.bar_theta - D_theta.bar
+}
+
+## Testing  Convergence
+
+a3 = as.matrix(mcmc.out3$samples$chain1[, c(1, 2, 390, 391, 779)])
+b3 = as.matrix(mcmc.out3$samples$chain2[, c(1, 2, 390, 391, 779)])
+g3 = gelman.diag(list(mcmc(a3), mcmc(b3)))
