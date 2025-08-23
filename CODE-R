@@ -254,7 +254,7 @@ for(t in 1:1){
                           monitors = c('beta0', 'k', 'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est2 = mcmc.out2$summary$all.chain$[c(1, 2, 390, 391, 779), ]
+  bayes.est2 = mcmc.out2$summary$all.chain[c(1, 2, 390, 391, 779), ]
   Output2[[t]] <- bayes.est2
   beta0.M2[t] <- Output2[[t]][1, 1]
   k.M2[t] <- Output2[[t]][2, 1]
@@ -309,7 +309,7 @@ for(t in 1:1){
   Code <- nimbleCode({
     # Model
     for(i in 1:n){
-      logit(mu[i]) <- (1-B[i])*beta0 + sqrt(sigma2)*(W[i]+H[i])
+      logit(mu[i]) <- (1-B[i])*beta0 + sqrt(sigma2)*(W[i]+H[i]/sqrt(2))
       U[i] <- pnorm((Z[i]+H[i])/sqrt(2))
       B[i] <- nimStep(p - U[i])
       phis[i] <- B[i]*k*phi + (1 - B[i])*phi
@@ -343,7 +343,7 @@ for(t in 1:1){
                           monitors = c('beta0','k' ,'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est3 = mcmc.out3$summary$all.chain$[c(1, 2, 390, 391, 779), ]
+  bayes.est3 = mcmc.out3$summary$all.chain[c(1, 2, 390, 391, 779), ]
   Output3[[t]] <- bayes.est3
   beta0.M3[t] <- Output3[[t]][1, 1]
   k.M3[t] <- Output3[[t]][2, 1]
