@@ -93,14 +93,107 @@ library(nimble)
 library(scoringRules)
 library(readxl)
 
-CALC <- function(x, true.value){
-  n <- length(x)
-  Est <- mean(x)
-  Bias <- mean(x) - true.value
-  RBias <- (mean(x)/true.value)-1
-  RMSE <- mean(sqrt((x - true.value) ^ 2))
-  return(c(Estimate = Est, Bias = Bias, RBias=RBias , RMSE = RMSE))
+
+dKS <- nimbleFunction(
+  run = function(x = double(0), alpha = double(0), omega = double(0),
+                 log = integer(0, default = 0)){
+    returnType(double(0))
+    logProb <- log(alpha*(log(0.5)/log(1 - omega^alpha))*(x^(alpha - 1))*(1 - (x^alpha))^((log(0.5)/log(1 - omega^alpha)) - 1))
+    if(log) return(logProb)
+    else return(exp(logProb))
+  })
+
+rKs = function(n, alpha, omega){
+  U = runif(n)
+  X = rep(NA, n)
+  for(i in 1:n){
+    X[i] = (1 - (U[i]^(1/(log(0.5)/log(1 - omega^alpha)))))^(1/alpha)
+  }
+  return(X)
 }
+
+rKS <- nimbleRcall(function(n = integer(0), alpha = double(0), omega = double(0)){}, 
+                   Rfun = 'rKs', returnType = double(0))
+
+registerDistributions(list(
+  dKS = list(
+    BUGSdist = "dKS(alpha, omega)",
+    types = c('alpha = double(0)', 'omega = double(0)')
+  )
+))
+
+
+djt <- nimbleFunction(
+  run = function(x = double(0), ksi = double(0), delta = double(0), nu = double(0),
+                 log = integer(0, default = 0)){
+    returnType(double(0))
+    logProb <- log(delta * (nu^(nu/2)) * gamma((nu + 1)/2) 
+                   *( nu + ( qt(0.5, df = nu) + delta * ( log(x / (1-x)) - log(ksi / (1-ksi))))^2)^((nu + 1) / -2)
+                   / (x * (1-x) * gamma(0.5) * gamma (nu/2)))
+    if(log) return(logProb)
+    else return(exp(logProb))
+  })
+djt(0.3,0.5,1,1)
+rJt = function(n, ksi, delta, nu){
+  X = rt(n, df = nu)
+  gamma = qt(0.5, df = nu) - delta * log(ksi / (1 - ksi))
+  Y = 1 / (1 + exp(-(X - gamma) / delta))
+  return(Y)
+}
+
+rjt <- nimbleRcall(function(n = integer(0), ksi = double(0), delta = double(0), nu = double(0)){}, 
+                   Rfun = 'rJt', returnType = double(0))
+
+registerDistributions(list(
+  djt = list(
+    BUGSdist = "djt(ksi, delta, nu)",
+    types = c('ksi = double(0)', 'delta = double(0)','nu = double(0)')
+  )
+))
+
+dFB <- nimbleFunction(
+  run = function(x = double(0), mu = double(0), phi = double(0),
+                 p = double(0), omega = double(0), log = integer(0, default = 0)){
+    returnType(double(0))
+    wtilde <- omega * min(mu/p, (1 - mu)/(1 - p))
+    lambda1 <- mu + (1 - p) * wtilde
+    lambda2 <- mu - p * wtilde
+    logProb <- log(p * dbeta(x, phi*lambda1, phi*(1 - lambda1)) +
+                     (1 - p) * dbeta(x, phi*lambda2, phi*(1 - lambda2)))
+    if(log) return(logProb)
+    else return(exp(logProb))
+  })
+
+
+rFb <- function(n, mu, phi, p, omega){
+  wtilde <- omega * min(mu/p, (1 - mu)/(1 - p))
+  lambda1 <- mu + (1 - p) * wtilde
+  lambda2 <- mu - p * wtilde
+  z <- rbinom(n, size = 1, prob = p)
+  y = c()
+  for (i in 1:n) {
+    if (z[i] == 1) {
+      y[i] <- rbeta(1, phi*lambda1, phi*(1 - lambda1))
+    } else {
+      y[i] <- rbeta(1, phi*lambda2, phi*(1 - lambda2))
+    }
+  }
+  return(y)
+}
+
+rFB <- nimbleRcall(function(n = integer(0), mu = double(0), phi = double(0),
+                            p = double(0), omega = double(0)){},
+                   Rfun = 'rFb', returnType = double(0))
+
+registerDistributions(list(
+  dFB = list(
+    BUGSdist = "dFB(mu, phi, p, omega)",
+    types = c('mu = double(0)', 'phi = double(0)',
+              'p = double(0)', 'omega = double(0)')
+  )
+))
+
+
 
 n.itr=60000
 n.burn=40000
@@ -113,16 +206,19 @@ getmode <- function(v) {
   uniqv[which.max(tabulate(match(v, uniqv)))]
 }
 
-Output1 = Output2= Output3 =list()
+Output1 = Output2 = Output3 = Output4 = Output5 = Output6 = list()
 
 beta0.M1 = phi.M1 = sigma2.M1 = c()
 beta0.M2  = p.M2 = k.M2 = phi.M2 = sigma2.M2 = c()
 beta0.M3  = p.M3 = k.M3 = phi.M3 = sigma2.M3 = c()
-WAIC1 =  WAIC2 = WAIC3 = c()
-lppd1  = lppd2 = lppd3 = c() 
-pWAIC1  = pWAIC2 = pWAIC3 = c()
-LPML1 = LPML2 = LPML3 = c()
-DIC1 = DIC2 = DIC3 = c()
+beta0.M4 = phi.M4 = sigma2.M4 = c()
+beta0.M5 = delta.M5 = nu.M5 = sigma2.M5 = c()
+beta0.M6 = omega.M6 = p.M6 = phi.M6 = sigma2.M6 = c()
+WAIC1 =  WAIC2 = WAIC3 =  WAIC4 =  WAIC5 =  WAIC6 = c()
+lppd1  = lppd2 = lppd3 =  lppd4 =  lppd5 =  lppd6 = c() 
+pWAIC1  = pWAIC2 = pWAIC3 =  pWAIC4 =  pWAIC5 =  pWAIC6 = c()
+LPML1 = LPML2 = LPML3 =  LPML4 =  LPML5 =  LPML6 = c()
+DIC1 = DIC2 = DIC3 = DIC4 = DIC5 = DIC6 = c()
 
 for(t in 1:1){
   y <- Fe0
@@ -174,7 +270,7 @@ for(t in 1:1){
                           monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est1 = mcmc.out1$summary$all.chain$[c(1, 389, 390), ]
+  bayes.est1 = mcmc.out1$summary$all.chain[c(1, 389, 390), ]
   Output1[[t]] <- bayes.est1
   beta0.M1[t] <- Output1[[t]][1, 1]
   phi.M1[t] <- Output1[[t]][2, 1]
@@ -210,11 +306,6 @@ for(t in 1:1){
   D_theta.bar = -2*sum(dbeta(y, shape1 = phi.M1*Mu.bar, shape2 = phi.M1*(1-Mu.bar), log = TRUE))
   DIC1[t] = 2*D.bar_theta - D_theta.bar
   
-  # Testing  Convergence
-  
-  a1 = as.matrix(mcmc.out1$samples$chain1[, c(1, 389, 390)])
-  b1 = as.matrix(mcmc.out1$samples$chain2[, c(1, 389, 390)])
-  g1 = gelman.diag(list(mcmc(a1), mcmc(b1)))
   #__________________________________________________________
   # Define Model 02 (M-Beta) & indep
   #__________________________________________________________
@@ -284,7 +375,6 @@ for(t in 1:1){
   }
   LPML2[t] = sum(log(CPO))
   
-  Phis[2,]*Mu[2,]
   # DIC
   D = c()
   for(k in 1:m){
@@ -295,12 +385,6 @@ for(t in 1:1){
   Phis.bar = apply(Phis, 2, "mean")
   D_theta.bar = -2*sum(dbeta(y, shape1 = Phis.bar*Mu.bar, shape2 = Phis.bar*(1-Mu.bar),log = TRUE))
   DIC2[t] = 2*D.bar_theta - D_theta.bar
-  # Testing  Convergence
-  
-  a2 = as.matrix(mcmc.out2$samples$chain1[, c(1, 2, 390, 391, 779)])
-  b2 = as.matrix(mcmc.out2$samples$chain2[, c(1, 2, 390, 391, 779)])
-  g2 = gelman.diag(list(mcmc(a2), mcmc(b2)))
-  
   
   #__________________________________________________________
   # Define Model 03 (M-Beta) & dep
@@ -385,10 +469,284 @@ for(t in 1:1){
   Phis.bar = apply(Phis, 2, "mean")
   D_theta.bar = -2*sum(dbeta(y, shape1 = Phis.bar*Mu.bar, shape2 = Phis.bar*(1-Mu.bar),log = TRUE))
   DIC3[t] = 2*D.bar_theta - D_theta.bar
+  
+  #__________________________________________________________
+  # Define Model 04 (KS)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- beta0  + sqrt(sigma2)*W[i]
+      y[i] ~ dKS(phi, mu[i])
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    phi ~ dgamma(0.01, 0.01)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+    
+  })
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, phi=1, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out4 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 2, 
+                          monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  bayes.est4 = mcmc.out4$summary$all.chain[c(1, 389, 390), ]
+  Output4[[t]] <- bayes.est4
+  beta0.M4[t] <- Output4[[t]][1, 1]
+  phi.M4[t] <- Output4[[t]][2, 1]
+  sigma2.M4[t] <- Output4[[t]][3, 1]
+  
+  # WAIC
+  WAIC4[t] =  mcmc.out4$WAIC$WAIC
+  lppd4[t] = mcmc.out4$WAIC$lppd
+  pWAIC4[t] = mcmc.out4$WAIC$pWAIC
+  
+  
+  #LPML
+  mcmc.sample4 = (mcmc.out4$samples$chain1 + mcmc.out4$samples$chain2) / 2
+  Mu = mcmc.sample4[, 2:388]
+  Phi = mcmc.sample4[, 389]
+  n = length(y)
+  m = nrow(mcmc.sample4)
+  
+  CPO = rep(NA, n)
+  Density = rep(NA, m)
+  for(i in 1:n){
+    for(k in 1:m){
+      Density[k] = 1/(((Phi[k]*log(0.5))/log(1 - Mu[k, i]^Phi[k]))*(y[i]^(Phi[k] - 1))
+                      *(1 - y[i]^Phi[k])^((log(0.5)/log(1 - Mu[k, i]^Phi[k])) - 1))
+    }
+    CPO[i] = 1/mean(Density)
+  }
+  LPML4[t] = sum(log(CPO))
+  
+  #DIC
+  D = rep(NA, m)
+  for(k in 1:m){
+    D[k] = -2*sum(log(((Phi[k]*log(0.5))/log(1 - Mu[k, ]^Phi[k]))*(y^(Phi[k] - 1))
+                      *(1 - y^Phi[k])^((log(0.5)/log(1 - Mu[k, ]^Phi[k])) - 1)))
+  }
+  
+  D.bar_theta = mean(D)
+  
+  phi.M4 = mean(mcmc.sample4[, 389])
+  Mu.bar = apply(Mu, 2, "mean")
+  D_theta.bar = -2*sum(log(((phi.M4*log(0.5))/log(1 - Mu.bar^phi.M4))*(y^(phi.M4 - 1))
+                           *(1 - y^phi.M4)^((log(0.5)/log(1 - Mu.bar^phi.M4)) - 1)))
+  
+  DIC4[t] = 2*D.bar_theta - D_theta.bar
+  
+  #__________________________________________________________
+  # Define Model 05 (JT)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(ksi[i]) <- beta0  + sqrt(sigma2)*W[i]
+      y[i] ~ djt(ksi[i], delta, nu)
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    delta ~ dgamma(0.01, 0.01)
+    nu ~ dunif(2, 50)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+    
+  })
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, delta=1, nu=10, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out5 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 2, 
+                          monitors = c( 'beta0', 'delta','nu','sigma2','ksi', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  bayes.est5 = mcmc.out5$summary$all.chain[c(1,2, 390, 391), ]
+  Output5[[t]] <- bayes.est5
+  beta0.M5[t] <- Output5[[t]][1, 1]
+  delta.M5[t] <- Output5[[t]][2, 1]
+  nu.M5[t] <- Output5[[t]][3, 1]
+  sigma2.M5[t] <- Output5[[t]][4, 1]
+  
+  
+  # WAIC
+  WAIC5[t] =  mcmc.out5$WAIC$WAIC
+  lppd5[t] = mcmc.out5$WAIC$lppd
+  pWAIC5[t] = mcmc.out5$WAIC$pWAIC
+  
+  
+  #LPML
+  mcmc.sample5 = (mcmc.out5$samples$chain1 + mcmc.out5$samples$chain2) / 2
+  
+  #LPML
+  Ksi = mcmc.sample5[, 3:389]
+  Delta = mcmc.sample5[, 2]
+  Nu = mcmc.sample5[, 390]
+  n = length(y)
+  m = nrow(mcmc.sample5)
+  CPO = rep(NA, n)
+  Density = rep(NA, m)
+  for(i in 1:n){
+    for(k in 1:m){
+      Density[k] = 1/(((Delta[k] * (Nu[k] ^ (Nu[k] / 2))) / (y[i] * (1 - y[i]) * beta(0.5, Nu[k]/2))) * 
+                        (Nu[k] + (qt(0.5, df = Nu[k]) + Delta[k] * (log(y[i] / (1 - y[i])) - log(Ksi[k, i] / (1 - Ksi[k, i])))) ^ 2) ^ (- (Nu[k] + 1) / 2))
+    }
+    CPO[i] = 1/mean(Density)
+  }
+  LPML5[t] = sum(log(CPO))
+  
+  
+  #DIC
+  D = rep(NA, m)
+  for(k in 1:m){
+    D[k] = -2*sum(log(((Delta[k] * (Nu[k] ^ (Nu[k] / 2))) / (y * (1 - y) * beta(0.5, Nu[k]/2))) * 
+                        (Nu[k] + (qt(0.5, df = Nu[k]) + Delta[k] * (log(y / (1 - y)) - log(Ksi[k, ] / (1 - Ksi[k, ])))) ^ 2) ^ (- (Nu[k] + 1) / 2)))
+  }
+  
+  D.bar_theta = mean(D)
+  
+  ksi.bar = apply(Ksi, 2, "mean")
+  Delta.bar = mean(mcmc.sample5[, 2])
+  Nu.bar = mean(mcmc.sample5[, 390])
+  D_theta.bar = -2*sum(log(((Delta.bar * (Nu.bar ^ (Nu.bar / 2))) / (y * (1 - y) * beta(0.5, Nu.bar/2))) * 
+                             (Nu.bar + (qt(0.5, df = Nu.bar) + Delta.bar * (log(y / (1 - y)) - log(ksi.bar / (1 - ksi.bar)))) ^ 2) ^ (- (Nu.bar + 1) / 2)))
+  
+  DIC5[t] = 2*D.bar_theta - D_theta.bar
+  
+  #__________________________________________________________
+  # Define Model 06 (FB)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- beta0 + sqrt(sigma2)*W[i]
+      y[i] ~ dFB(mu[i], phi, p, omega)
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    phi ~ dgamma(0.01, 0.01)
+    p ~ dunif(0, 1)
+    omega ~ dunif(0, 1)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+    
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, omega=0.5, p=0.5 , phi=50, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out6 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 2, 
+                          monitors = c( 'beta0', 'omega','p','phi','sigma2','mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  bayes.est6 = mcmc.out6$summary$all.chain[c(1, 389, 390, 391,392), ]
+  Output6[[t]] <- bayes.est6
+  beta0.M6[t] <- Output6[[t]][1, 1]
+  omega.M6[t] <- Output6[[t]][2, 1]
+  p.M6[t] <- Output6[[t]][3, 1]
+  phi.M6[t] <- Output6[[t]][4, 1]
+  sigma2.M6[t] <- Output6[[t]][6, 1]
+  
+  
+  # WAIC
+  WAIC6[t] =  mcmc.out6$WAIC$WAIC
+  lppd6[t] = mcmc.out6$WAIC$lppd
+  pWAIC6[t] = mcmc.out6$WAIC$pWAIC
+  
+  
+  #LPML
+  mcmc.sample6 = (mcmc.out6$samples$chain1 + mcmc.out6$samples$chain2) / 2
+  Mu = mcmc.sample6[, 2:388]
+  Omega = mcmc.sample6[, 389]
+  P = mcmc.sample6[, 390]
+  Phi = mcmc.sample6[, 391]
+  n = length(y)
+  m = nrow(mcmc.sample6)
+  CPO = Density = c()
+  for(i in 1:n){
+    for(k in 1:m){
+      Density[k] = 1/(P[k]*dbeta(y[i],shape1 = Phi[k]*Lambda1[k,i], shape2 = Phi[k]*(1-Lambda1[k,i]))+
+                        (1-P[k])*dbeta(y[i],shape1 = Phi[k]*Lambda2[k,i], shape2 = Phi[k]*(1-Lambda2[k,i])))
+    }
+    CPO[i] = 1/mean(Density)
+  }
+  LPML6[t] = sum(log(CPO))
+  
+  
+  #DIC
+  D = rep(NA, m)
+  Wtilde=matrix(,m,n)
+  for(k in 1:m){
+    for (i in 1:n) {
+      Wtilde[k,i] <- Omega[k]* min(Mu[k,i]/P[k], (1 - Mu[k,i])/(1 - P[k]))
+      Lambda1[k,i] <- Mu[k,i] + (1 - P[k]) * Wtilde[k,i]
+      Lambda2[k,i] <- Mu[k,i] - P[k] * Wtilde[k,i]
+    }}
+  for(k in 1:m){
+    D[k] = -2*sum(log((P[k]*dbeta(y,shape1 = Phi[k]*Lambda1[k,], shape2 = Phi[k]*(1-Lambda1[k,]))+
+                         (1-P[k])*dbeta(y,shape1 = Phi[k]*Lambda2[k,], shape2 = Phi[k]*(1-Lambda2[k,])))))
+  }
+  D.bar_theta = mean(D)
+  Lambda1.bar = apply(Lambda1, 2, "mean")
+  Lambda2.bar = apply(Lambda2, 2, "mean")
+  P.bar =mean( mcmc.sample6[, 390])
+  Phi.bar = mean(mcmc.sample6[, 391])
+  D_theta.bar = -2*sum(log(P.bar*dbeta(y, shape1 = Phi.bar*Lambda1.bar, shape2 = Phi.bar*(1-Lambda1.bar))+
+                             (1-P.bar)*dbeta(y, shape1 = Phi.bar*Lambda2.bar, shape2 = Phi.bar*(1-Lambda2.bar))))
+  DIC6[t] = 2*D.bar_theta - D_theta.bar
+  
+  
 }
 
 ## Testing  Convergence
 
+
+a1 = as.matrix(mcmc.out1$samples$chain1[, c(1, 389, 390)])
+b1 = as.matrix(mcmc.out1$samples$chain2[, c(1, 389, 390)])
+g1 = gelman.diag(list(mcmc(a1), mcmc(b1)))
+
+a2 = as.matrix(mcmc.out2$samples$chain1[, c(1, 2, 390, 391, 779)])
+b2 = as.matrix(mcmc.out2$samples$chain2[, c(1, 2, 390, 391, 779)])
+g2 = gelman.diag(list(mcmc(a2), mcmc(b2)))
+
 a3 = as.matrix(mcmc.out3$samples$chain1[, c(1, 2, 390, 391, 779)])
 b3 = as.matrix(mcmc.out3$samples$chain2[, c(1, 2, 390, 391, 779)])
 g3 = gelman.diag(list(mcmc(a3), mcmc(b3)))
+
+a4 = as.matrix(mcmc.out4$samples$chain1[, c(1, 389, 390)])
+b4 = as.matrix(mcmc.out4$samples$chain2[, c(1, 389, 390)])
+g4 = gelman.diag(list(mcmc(a4), mcmc(b4)))
+
+a5 = as.matrix(mcmc.out5$samples$chain1[, c(1,2, 390, 391)])
+b5 = as.matrix(mcmc.out5$samples$chain2[, c(1,2, 390, 391)])
+g5 = gelman.diag(list(mcmc(a5), mcmc(b5)))
+
+a6 = as.matrix(mcmc.out6$samples$chain1[, c(1, 389, 390, 391,392)])
+b6 = as.matrix(mcmc.out6$samples$chain2[, c(1, 389, 390, 391,392)])
+g6 = gelman.diag(list(mcmc(a6), mcmc(b6)))
