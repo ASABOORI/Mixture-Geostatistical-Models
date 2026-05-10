@@ -133,6 +133,7 @@ djt <- nimbleFunction(
     if(log) return(logProb)
     else return(exp(logProb))
   })
+
 rJt = function(n, ksi, delta, nu){
   X = rt(n, df = nu)
   gamma = qt(0.5, df = nu) - delta * log(ksi / (1 - ksi))
@@ -688,8 +689,14 @@ for(t in 1:1){
   n = length(y)
   m = nrow(mcmc.sample6)
   CPO = Density = c()
-  for(i in 1:n){
-    for(k in 1:m){
+  Wtilde=matrix(,m,n)
+  Lambda1=matrix(,m,n)
+  Lambda2=matrix(,m,n)
+  for(k in 1:m){
+    for (i in 1:n) {
+      Wtilde[k,i] <- Omega[k]* min(Mu[k,i]/P[k], (1 - Mu[k,i])/(1 - P[k]))
+      Lambda1[k,i] <- Mu[k,i] + (1 - P[k]) * Wtilde[k,i]
+      Lambda2[k,i] <- Mu[k,i] - P[k] * Wtilde[k,i]
       Density[k] = 1/(P[k]*dbeta(y[i],shape1 = Phi[k]*Lambda1[k,i], shape2 = Phi[k]*(1-Lambda1[k,i]))+
                         (1-P[k])*dbeta(y[i],shape1 = Phi[k]*Lambda2[k,i], shape2 = Phi[k]*(1-Lambda2[k,i])))
     }
@@ -700,13 +707,6 @@ for(t in 1:1){
   
   #DIC
   D = rep(NA, m)
-  Wtilde=matrix(,m,n)
-  for(k in 1:m){
-    for (i in 1:n) {
-      Wtilde[k,i] <- Omega[k]* min(Mu[k,i]/P[k], (1 - Mu[k,i])/(1 - P[k]))
-      Lambda1[k,i] <- Mu[k,i] + (1 - P[k]) * Wtilde[k,i]
-      Lambda2[k,i] <- Mu[k,i] - P[k] * Wtilde[k,i]
-    }}
   for(k in 1:m){
     D[k] = -2*sum(log((P[k]*dbeta(y,shape1 = Phi[k]*Lambda1[k,], shape2 = Phi[k]*(1-Lambda1[k,]))+
                          (1-P[k])*dbeta(y,shape1 = Phi[k]*Lambda2[k,], shape2 = Phi[k]*(1-Lambda2[k,])))))
