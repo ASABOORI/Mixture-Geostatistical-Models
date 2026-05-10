@@ -133,7 +133,6 @@ djt <- nimbleFunction(
     if(log) return(logProb)
     else return(exp(logProb))
   })
-djt(0.3,0.5,1,1)
 rJt = function(n, ksi, delta, nu){
   X = rt(n, df = nu)
   gamma = qt(0.5, df = nu) - delta * log(ksi / (1 - ksi))
