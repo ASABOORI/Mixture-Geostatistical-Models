@@ -725,7 +725,6 @@ for(t in 1:1){
 
 ## Testing  Convergence
 
-
 a1 = as.matrix(mcmc.out1$samples$chain1[, c(1, 389, 390)])
 b1 = as.matrix(mcmc.out1$samples$chain2[, c(1, 389, 390)])
 g1 = gelman.diag(list(mcmc(a1), mcmc(b1)))
