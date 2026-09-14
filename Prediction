@@ -1,0 +1,642 @@
+#__________________________________________________________
+# Import Data
+#__________________________________________________________
+library(ggplot2)
+data("Windarling", package="gmGeostats")
+Windarling
+class(Windarling)
+dim(Windarling)
+s1=Windarling$Easting
+s2=Windarling$Northing
+Fe = Windarling$Fe
+df=data.frame(cbind(Longitude=s1,Latitude=s2, Fe = Windarling$Fe))
+ggplot(df)+
+  geom_point(aes(Longitude,Latitude, color = Fe),size = 0.6) +
+  coord_fixed(ratio = 3) +
+  geom_vline(xintercept = c(0,100), linetype="dotted", linewidth=0.4)+
+  scale_color_gradientn(colours = colorRampPalette(c('red','skyblue','wheat'))(100)) +
+  labs(color="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+df=data.frame(Fe)
+ggplot(df,aes(x=Fe))+
+  geom_histogram(color="azure3",fill="burlywood1",binwidth = 0.005)+
+  geom_density(aes(y=0.005*..count..),color="lightskyblue4")+
+  labs(x="Fe Proportion",y="Frequency")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+ggplot(df) + 
+  geom_boxplot(aes(x="",y=Fe),width=0.8,color="lightskyblue4",fill="burlywood1")+
+  labs(x="",y="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+
+id=which(s1>=0&s1<=100)
+Fe0=Fe[id]
+min(Fe0)
+max(Fe0)
+s10=s1[id]
+s20=s2[id]
+df=data.frame(cbind(Longitude=s10,Latitude=s20,Fe0))
+ggplot(df)+
+  geom_point(aes(Longitude,Latitude, color = Fe0)) +
+  coord_fixed(ratio = 1.25) +
+  scale_color_gradientn(colours = colorRampPalette(c('red','skyblue','wheat'))(100)) +
+  labs(color="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+df=data.frame(Fe0)
+ggplot(df,aes(x=Fe0))+
+  geom_histogram(color="azure3",fill="skyblue",binwidth = 0.01)+
+  geom_density(aes(y=0.01*..count..),color="red")+
+  labs(x="Fe Proportion",y="Frequency")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+ggplot(df) + 
+  geom_boxplot(aes(x="",y=Fe0),width=0.8,color="red",fill="skyblue")+
+  labs(x="",y="Fe Proportion")+
+  theme_bw() +
+  theme(axis.line = element_line(),
+        plot.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank())
+
+x0 <- s10
+x1 <- s20
+s1 <- (x0 - min(x0))/(max(x0) - min(x0))
+s2 <- (x1 - min(x1))/(max(x1) - min(x1))
+
+
+miss.location=c(47, 140, 329, 350 ,138, 301, 325, 112, 223, 377, 378, 51, 73, 288,58,
+                282, 133, 256, 369, 35, 376, 326,181, 179, 204,  39, 158,
+                93,  57, 380, 201, 227, 164, 110, 246, 260, 239, 231, 275, 9,  84, 273,
+                238, 280,  55, 213, 347, 268,79, 118, 314, 240, 358, 303, 228,  34, 307,
+                297)
+l=length(miss.location)
+Fe00=Fe0[-c(miss.location)]
+
+
+#__________________________________________________________
+# Import Packages
+#__________________________________________________________
+
+library(nimble)
+library(scoringRules)
+library(readxl)
+
+
+
+
+dKS <- nimbleFunction(
+  run = function(x = double(0), alpha = double(0), omega = double(0),
+                 log = integer(0, default = 0)){
+    returnType(double(0))
+    logProb <- log(alpha*(log(0.5)/log(1 - omega^alpha))*(x^(alpha - 1))*(1 - (x^alpha))^((log(0.5)/log(1 - omega^alpha)) - 1))
+    if(log) return(logProb)
+    else return(exp(logProb))
+  })
+
+rKs = function(n, alpha, omega){
+  U = runif(n)
+  X = rep(NA, n)
+  for(i in 1:n){
+    X[i] = (1 - (U[i]^(1/(log(0.5)/log(1 - omega^alpha)))))^(1/alpha)
+  }
+  return(X)
+}
+
+rKS <- nimbleRcall(function(n = integer(0), alpha = double(0), omega = double(0)){}, 
+                   Rfun = 'rKs', returnType = double(0))
+
+registerDistributions(list(
+  dKS = list(
+    BUGSdist = "dKS(alpha, omega)",
+    types = c('alpha = double(0)', 'omega = double(0)')
+  )
+))
+
+
+djt <- nimbleFunction(
+  run = function(x = double(0), ksi = double(0), delta = double(0), nu = double(0),
+                 log = integer(0, default = 0)){
+    returnType(double(0))
+    logProb <- log(delta * (nu^(nu/2)) * gamma((nu + 1)/2) 
+                   *( nu + ( qt(0.5, df = nu) + delta * ( log(x / (1-x)) - log(ksi / (1-ksi))))^2)^((nu + 1) / -2)
+                   / (x * (1-x) * gamma(0.5) * gamma (nu/2)))
+    if(log) return(logProb)
+    else return(exp(logProb))
+  })
+
+rJt = function(n, ksi, delta, nu){
+  X = rt(n, df = nu)
+  gamma = qt(0.5, df = nu) - delta * log(ksi / (1 - ksi))
+  Y = 1 / (1 + exp(-(X - gamma) / delta))
+  return(Y)
+}
+
+rjt <- nimbleRcall(function(n = integer(0), ksi = double(0), delta = double(0), nu = double(0)){}, 
+                   Rfun = 'rJt', returnType = double(0))
+
+registerDistributions(list(
+  djt = list(
+    BUGSdist = "djt(ksi, delta, nu)",
+    types = c('ksi = double(0)', 'delta = double(0)','nu = double(0)')
+  )
+))
+
+dFB <- nimbleFunction(
+  run = function(x = double(0), mu = double(0), phi = double(0),
+                 p = double(0), omega = double(0), log = integer(0, default = 0)){
+    returnType(double(0))
+    wtilde <- omega * min(mu/p, (1 - mu)/(1 - p))
+    lambda1 <- mu + (1 - p) * wtilde
+    lambda2 <- mu - p * wtilde
+    logProb <- log(p * dbeta(x, phi*lambda1, phi*(1 - lambda1)) +
+                     (1 - p) * dbeta(x, phi*lambda2, phi*(1 - lambda2)))
+    if(log) return(logProb)
+    else return(exp(logProb))
+  })
+
+
+rFb <- function(n, mu, phi, p, omega){
+  wtilde <- omega * min(mu/p, (1 - mu)/(1 - p))
+  lambda1 <- mu + (1 - p) * wtilde
+  lambda2 <- mu - p * wtilde
+  z <- rbinom(n, size = 1, prob = p)
+  y = c()
+  for (i in 1:n) {
+    if (z[i] == 1) {
+      y[i] <- rbeta(1, phi*lambda1, phi*(1 - lambda1))
+    } else {
+      y[i] <- rbeta(1, phi*lambda2, phi*(1 - lambda2))
+    }
+  }
+  return(y)
+}
+
+rFB <- nimbleRcall(function(n = integer(0), mu = double(0), phi = double(0),
+                            p = double(0), omega = double(0)){},
+                   Rfun = 'rFb', returnType = double(0))
+
+registerDistributions(list(
+  dFB = list(
+    BUGSdist = "dFB(mu, phi, p, omega)",
+    types = c('mu = double(0)', 'phi = double(0)',
+              'p = double(0)', 'omega = double(0)')
+  )
+))
+
+
+
+n.itr=60000
+n.burn=40000
+n.thin=20
+
+
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+Output1 = Output2 = Output3 = Output4 = Output5 = Output6 = list()
+IS1.yy = CRPS1.yy =  APE1.yy = c()
+IS2.yy = CRPS2.yy = APE2.yy = c()
+IS3.yy = CRPS3.yy = APE3.yy = c()
+IS4.yy = CRPS4.yy = APE4.yy = c()
+IS5.yy = CRPS5.yy = APE5.yy = c()
+IS6.yy = CRPS6.yy = APE6.yy = c()
+
+for(t in 1:l){
+  y <- Fe0
+  new.y = y
+  new.y[miss.location[t]] = NA
+  new.y
+  
+  dists <- as.matrix(dist(cbind(s1, s2)))
+  Data <- list(y = new.y)
+  
+  expcov <- nimbleFunction(
+    run = function(dists = double(2), theta = double(0)) {
+      returnType(double(2))
+      n <- dim(dists)[1]
+      result <- matrix(nrow = n, ncol = n, init = FALSE)
+      for (i in 1:n) {
+        for (j in 1:n) {
+          result[i, j] <- exp(-dists[i, j] / theta)
+        }
+      }
+      return(result)
+    }
+  )
+  #__________________________________________________________
+  # Define Model 01 (Beta)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- beta0 + sqrt(sigma2)*W[i]
+      y[i] ~ dbeta(phi*mu[i], phi*(1 - mu[i]))
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    phi ~ dgamma(0.01, 0.01)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, phi=50, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out1 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 1, 
+                          monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  y.predict1 = cbind(mcmc.out1$summary[391:777, ], Mode = apply(mcmc.out1$samples[, 391:777], 2, getmode))
+  
+  # IS for y
+  IS1.y = c()
+  for(i in 1:length(miss.location)){
+    if(y[miss.location[i]] < y.predict1[miss.location[i] , 4]){
+      IS1.y[i] = (y.predict1[miss.location[i] , 5] - y.predict1[miss.location[i] , 4]) +
+        (2/0.05) * (y.predict1[miss.location[i] , 4] - y[miss.location[i]])
+    }else if(y[miss.location[i]] > y.predict1[miss.location[i] , 5]){
+      IS1.y[i] = (y.predict1[miss.location[i] , 5] - y.predict1[miss.location[i] , 4]) +
+        (2/0.05) * (y[miss.location[i]] - y.predict1[miss.location[i] , 5])
+    }else{
+      IS1.y[i] = y.predict1[miss.location[i] , 5] - y.predict1[miss.location[i] , 4]
+    }
+  }
+  IS1.yy[t] = mean(IS1.y)
+  
+  
+  # CRPS for y
+  CRPS1.y = c()
+  for(i in 1:length(miss.location)){
+    CRPS1.y[i] = crps_sample(y = y[miss.location[i]], dat = mcmc.out1$samples[, 391:777][, miss.location[i]])
+  }
+  CRPS1.yy[t] = mean(CRPS1.y)
+  
+  
+  # APE for y
+  APE1.yy[t] = mean(abs(y.predict1[miss.location, 6] - y[miss.location]))
+  
+  
+  
+  #__________________________________________________________
+  # Define Model 02 (M-Beta) & indep
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- (1-B[i])*beta0 + sqrt(sigma2)*W[i]
+      U[i] <- pnorm(Z[i])
+      B[i] <- nimStep(p - U[i])
+      phis[i] <- B[i]*k*phi + (1 - B[i])*phi
+      y[i] ~ dbeta(phis[i]*mu[i], phis[i]*(1 - mu[i]))
+    }
+    
+    
+    # Gaussian Process
+    Sigma1[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma1[1:n, 1:n])
+    
+    Sigma2[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    Z[1:n] ~ dmnorm(zero[1:n], cov = Sigma2[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0 , var=100)
+    phi ~ dgamma(0.01, 0.01)
+    p ~ dunif(0, 1)
+    k ~ dunif(0, 0.01)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list( beta0 = 0, k=0.5, p = 0.5, phi = 1, sigma2 = 1, W = rep(0, Consts$n), Z = rep(0, Consts$n))
+  mcmc.out2 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 1,
+                          monitors = c('beta0', 'k', 'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  y.predict2 = cbind(mcmc.out2$summary[780:1166, ], Mode = apply(mcmc.out2$samples[, 780:1166], 2, getmode))
+  
+  
+  # IS for y
+  IS2.y = c()
+  for(i in 1:length(miss.location)){
+    if(y[miss.location[i]] < y.predict2[miss.location[i] , 4]){
+      IS2.y[i] = (y.predict2[miss.location[i] , 5] - y.predict2[miss.location[i] , 4]) +
+        (2/0.05) * (y.predict2[miss.location[i] , 4] - y[miss.location[i]])
+    }else if(y[miss.location[i]] > y.predict2[miss.location[i] , 5]){
+      IS2.y[i] = (y.predict2[miss.location[i] , 5] - y.predict2[miss.location[i] , 4]) +
+        (2/0.05) * (y[miss.location[i]] - y.predict2[miss.location[i] , 5])
+    }else{
+      IS2.y[i] = y.predict2[miss.location[i] , 5] - y.predict2[miss.location[i] , 4]
+    }
+  }
+  IS2.yy[t] = mean(IS2.y)
+  
+  
+  # CRPS for y
+  CRPS2.y = c()
+  for(i in 1:length(miss.location)){
+    CRPS2.y[i] = crps_sample(y = y[miss.location[i]], dat = mcmc.out2$samples[, 780:1166][, miss.location[i]])
+  }
+  CRPS2.yy[t] = mean(CRPS2.y)
+  
+  
+  # APE for y
+  APE2.yy[t] = mean(abs(y.predict2[miss.location, 6] - y[miss.location]))
+  
+  
+  
+  #__________________________________________________________
+  # Define Model 03 (M-Beta) & dep
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- (1-B[i])*beta0 + sqrt(sigma2)*(W[i]+H[i])/sqrt(2)
+      U[i] <- pnorm((Z[i]+H[i])/sqrt(2))
+      B[i] <- nimStep(p - U[i])
+      phis[i] <- B[i]*k*phi + (1 - B[i])*phi
+      y[i] ~ dbeta(phis[i]*mu[i], phis[i]*(1 - mu[i]))
+    }
+    
+    
+    # Gaussian Process
+    Sigma1[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma1[1:n, 1:n])
+    
+    Sigma2[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    Z[1:n] ~ dmnorm(zero[1:n], cov = Sigma2[1:n, 1:n])
+    
+    Sigma3[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    H[1:n] ~ dmnorm(zero[1:n], cov = Sigma3[1:n, 1:n])
+    
+    # Priors
+    beta0 ~ dnorm(0 , var=100)
+    phi ~ dgamma(0.01, 0.01)
+    p ~ dunif(0, 1)
+    k ~ dunif(0, 0.01)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list(beta0 = 0, k = 0.5, p = 0.5, phi = 1, sigma2 = 1, W = rep(0, Consts$n), Z = rep(0, Consts$n), H = rep(0, Consts$n))
+  mcmc.out3 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 1,
+                          monitors = c('beta0','k' ,'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  y.predict3 = cbind(mcmc.out3$summary[780:1166, ], Mode = apply(mcmc.out3$samples[, 780:1166], 2, getmode))
+  
+  # IS for y
+  IS3.y = c()
+  for(i in 1:length(miss.location)){
+    if(y[miss.location[i]] < y.predict3[miss.location[i] , 4]){
+      IS3.y[i] = (y.predict3[miss.location[i] , 5] - y.predict3[miss.location[i] , 4]) +
+        (2/0.05) * (y.predict3[miss.location[i] , 4] - y[miss.location[i]])
+    }else if(y[miss.location[i]] > y.predict3[miss.location[i] , 5]){
+      IS3.y[i] = (y.predict3[miss.location[i] , 5] - y.predict3[miss.location[i] , 4]) +
+        (2/0.05) * (y[miss.location[i]] - y.predict3[miss.location[i] , 5])
+    }else{
+      IS3.y[i] = y.predict3[miss.location[i] , 5] - y.predict3[miss.location[i] , 4]
+    }
+  }
+  IS3.yy[t] = mean(IS3.y)
+  
+  
+  # CRPS for y
+  CRPS3.y = c()
+  for(i in 1:length(miss.location)){
+    CRPS3.y[i] = crps_sample(y = y[miss.location[i]], dat = mcmc.out3$samples[, 780:1166][, miss.location[i]])
+  }
+  CRPS3.yy[t] = mean(CRPS3.y)
+  
+  
+  # APE for y
+  APE3.yy[t] = mean(abs(y.predict3[miss.location, 6] - y[miss.location]))
+  
+  
+  #__________________________________________________________
+  # Define Model 04 (KS)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- beta0  + sqrt(sigma2)*W[i]
+      y[i] ~ dKS(phi, mu[i])
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    phi ~ dgamma(0.01, 0.01)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+    
+    
+    
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, phi=1, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out4 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 1, 
+                          monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  y.predict4 = cbind(mcmc.out4$summary[391:777, ], Mode = apply(mcmc.out4$samples[, 391:777], 2, getmode))
+  
+  # IS for y
+  IS4.y = c()
+  for(i in 1:length(miss.location)){
+    if(y[miss.location[i]] < y.predict4[miss.location[i] , 4]){
+      IS4.y[i] = (y.predict4[miss.location[i] , 5] - y.predict4[miss.location[i] , 4]) +
+        (2/0.05) * (y.predict4[miss.location[i] , 4] - y[miss.location[i]])
+    }else if(y[miss.location[i]] > y.predict4[miss.location[i] , 5]){
+      IS4.y[i] = (y.predict4[miss.location[i] , 5] - y.predict4[miss.location[i] , 4]) +
+        (2/0.05) * (y[miss.location[i]] - y.predict4[miss.location[i] , 5])
+    }else{
+      IS4.y[i] = y.predict4[miss.location[i] , 5] - y.predict4[miss.location[i] , 4]
+    }
+  }
+  IS4.yy[t] = mean(IS4.y)
+  
+  
+  # CRPS for y
+  CRPS4.y = c()
+  for(i in 1:length(miss.location)){
+    CRPS4.y[i] = crps_sample(y = y[miss.location[i]], dat = mcmc.out4$samples[, 391:777][, miss.location[i]])
+  }
+  CRPS4.yy[t] = mean(CRPS4.y)
+  
+  
+  # APE for y
+  APE4.yy[t] = mean(abs(y.predict4[miss.location, 6] - y[miss.location]))
+  
+  #__________________________________________________________
+  # Define Model 05 (JT)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(ksi[i]) <- beta0  + sqrt(sigma2)*W[i]
+      y[i] ~ djt(ksi[i], delta, nu)
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    delta ~ dgamma(0.01, 0.01)
+    nu ~ dunif(2, 50)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+    
+  })
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, delta=1, nu=10, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out5 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 1, 
+                          monitors = c( 'beta0', 'delta','nu','sigma2','ksi', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  y.predict5 = cbind(mcmc.out5$summary[392:778, ], Mode = apply(mcmc.out5$samples[, 392:778], 2, getmode))
+  
+  # IS for y
+  IS5.y = c()
+  for(i in 1:length(miss.location)){
+    if(y[miss.location[i]] < y.predict5[miss.location[i] , 4]){
+      IS5.y[i] = (y.predict5[miss.location[i] , 5] - y.predict5[miss.location[i] , 4]) +
+        (2/0.05) * (y.predict5[miss.location[i] , 4] - y[miss.location[i]])
+    }else if(y[miss.location[i]] > y.predict5[miss.location[i] , 5]){
+      IS5.y[i] = (y.predict5[miss.location[i] , 5] - y.predict5[miss.location[i] , 4]) +
+        (2/0.05) * (y[miss.location[i]] - y.predict5[miss.location[i] , 5])
+    }else{
+      IS5.y[i] = y.predict5[miss.location[i] , 5] - y.predict5[miss.location[i] , 4]
+    }
+  }
+  IS5.yy[t] = mean(IS5.y)
+  
+  
+  # CRPS for y
+  CRPS5.y = c()
+  for(i in 1:length(miss.location)){
+    CRPS5.y[i] = crps_sample(y = y[miss.location[i]], dat = mcmc.out5$samples[, 392:778][, miss.location[i]])
+  }
+  CRPS5.yy[t] = mean(CRPS5.y)
+  
+  
+  # APE for y
+  APE5.yy[t] = mean(abs(y.predict5[miss.location, 6] - y[miss.location]))
+  
+  #__________________________________________________________
+  # Define Model 06 (FB)
+  #__________________________________________________________
+  
+  Code <- nimbleCode({
+    # Model
+    for(i in 1:n){
+      logit(mu[i]) <- beta0 + sqrt(sigma2)*W[i]
+      y[i] ~ dFB(mu[i], phi, p, omega)
+    }
+    
+    
+    # Gaussian Process
+    Sigma[1:n, 1:n] <- expcov(dists[1:n, 1:n], theta)
+    W[1:n] ~ dmnorm(zero[1:n], cov = Sigma[1:n, 1:n])
+    
+    
+    # Priors
+    beta0 ~ dnorm(0, var = 100)
+    phi ~ dgamma(0.01, 0.01)
+    p ~ dunif(0, 1)
+    omega ~ dunif(0, 1)
+    sigma2 <- exp(sigmastar)
+    sigmastar ~ dunif(-2, 2)
+    
+  })
+  
+  Consts <- list(n = length(y), dists = dists, zero = rep(0, length(y)), theta = max(dists) / 3)
+  Inits <- list (beta0 = 0, omega=0.5, p=0.5 , phi=50, sigma2 = 1, W = rep(0, Consts$n))
+  mcmc.out6 <- nimbleMCMC(code = Code, data = Data, constants = Consts, inits = Inits,
+                          niter = n.itr, nburnin = n.burn, thin =  n.thin, nchains = 1, 
+                          monitors = c( 'beta0', 'omega','p','phi','sigma2','mu', 'y'),
+                          summary = TRUE, WAIC = TRUE)
+  
+  
+  y.predict6 = cbind(mcmc.out6$summary[393:779, ], Mode = apply(mcmc.out6$samples[, 393:779], 2, getmode))
+  
+  # IS for y
+  IS6.y = c()
+  for(i in 1:length(miss.location)){
+    if(y[miss.location[i]] < y.predict6[miss.location[i] , 4]){
+      IS6.y[i] = (y.predict6[miss.location[i] , 5] - y.predict6[miss.location[i] , 4]) +
+        (2/0.05) * (y.predict6[miss.location[i] , 4] - y[miss.location[i]])
+    }else if(y[miss.location[i]] > y.predict6[miss.location[i] , 5]){
+      IS6.y[i] = (y.predict6[miss.location[i] , 5] - y.predict6[miss.location[i] , 4]) +
+        (2/0.05) * (y[miss.location[i]] - y.predict6[miss.location[i] , 5])
+    }else{
+      IS6.y[i] = y.predict6[miss.location[i] , 5] - y.predict6[miss.location[i] , 4]
+    }
+  }
+  IS6.yy[t] = mean(IS6.y)
+  
+  
+  # CRPS for y
+  CRPS6.y = c()
+  for(i in 1:length(miss.location)){
+    CRPS6.y[i] = crps_sample(y = y[miss.location[i]], dat = mcmc.out6$samples[, 393:779][, miss.location[i]])
+  }
+  CRPS6.yy[t] = mean(CRPS6.y)
+  
+  
+  # APE for y
+  APE6.yy[t] = mean(abs(y.predict6[miss.location, 6] - y[miss.location]))
+
+}
