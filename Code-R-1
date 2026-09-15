@@ -195,13 +195,13 @@ registerDistributions(list(
 
 
 #__________________________________________________________
-# For one chain
+#  Run
 #__________________________________________________________
 
 n.itr=60000
 n.burn=40000
 n.thin=20
-n.chain=1
+n.chain=2
 
 
 getmode <- function(v) {
@@ -274,7 +274,7 @@ for(t in 1:1){
                           monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est1 = mcmc.out1$summary[c(1, 389, 390), ]
+  bayes.est1 = mcmc.out1$summary$all.chains[c(1, 389, 390), ]
   Output1[[t]] <- bayes.est1
   beta0.M1[t] <- Output1[[t]][1, 1]
   phi.M1[t] <- Output1[[t]][2, 1]
@@ -287,10 +287,11 @@ for(t in 1:1){
   pWAIC1[t] = mcmc.out1$WAIC$pWAIC
   
   # DIC
-  mcmc.sample1 = mcmc.out1$samples
-  Mu = mcmc.sample1[, 2:388]
+  mcmc.sample1.chain1 = mcmc.out1$samples$chain1
+  mcmc.sample1.chain2 = mcmc.out1$samples$chain2
+  Mu = rbind(mcmc.sample1.chain1[, 2:388],mcmc.sample1.chain2[, 2:388])
+  m = nrow(mcmc.sample1.chain1)+nrow(mcmc.sample1.chain2)
   n = length(y)
-  m = nrow(mcmc.sample1)
   D = c()
   for(k in 1:m){
     D[k] = -2*sum(dbeta(y,shape1 = phi.M1*Mu[k,], shape2 = phi.M1*(1-Mu[k,]), log = TRUE))
@@ -351,7 +352,7 @@ for(t in 1:1){
                           monitors = c('beta0', 'k', 'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est2 = mcmc.out2$summary[c(1, 2, 390, 391, 779), ]
+  bayes.est2 = mcmc.out2$summary$all.chains[c(1, 2, 390, 391, 779), ]
   Output2[[t]] <- bayes.est2
   beta0.M2[t] <- Output2[[t]][1, 1]
   k.M2[t] <- Output2[[t]][2, 1]
@@ -366,11 +367,12 @@ for(t in 1:1){
   
   
   # DIC
-  mcmc.sample2 = mcmc.out2$samples
-  Mu = mcmc.sample2[, 3:389]
-  Phis = mcmc.sample2[, 392:778] 
+  mcmc.sample2.chain1 = mcmc.out2$samples$chain1
+  mcmc.sample2.chain2 = mcmc.out2$samples$chain2
+  Mu = rbind(mcmc.sample2.chain1[, 3:389],mcmc.sample2.chain2[, 3:389])
+  Phis = rbind(mcmc.sample2.chain1[, 392:778],mcmc.sample2.chain2[, 392:778])
+  m = nrow(mcmc.sample2.chain1)+nrow(mcmc.sample2.chain2)
   n = length(y)
-  m = nrow(mcmc.sample2)
   D = c()
   for(k in 1:m){
     D[k] = -2*sum(dbeta(y, shape1 = Phis[k,]*Mu[k,], shape2 = Phis[k,]*(1-Mu[k,]),log = TRUE))
@@ -432,7 +434,7 @@ for(t in 1:1){
                           monitors = c('beta0','k' ,'p', 'phi', 'sigma2', 'phis', 'mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est3 = mcmc.out3$summary[c(1, 2, 390, 391, 779), ]
+  bayes.est3 = mcmc.out3$summary$all.chains[c(1, 2, 390, 391, 779), ]
   Output3[[t]] <- bayes.est3
   beta0.M3[t] <- Output3[[t]][1, 1]
   k.M3[t] <- Output3[[t]][2, 1]
@@ -448,12 +450,12 @@ for(t in 1:1){
   
   
   # DIC
-  mcmc.sample3 = mcmc.out3$samples
-  Mu = mcmc.sample3[, 3:389]
-  Phis = mcmc.sample3[, 392:778]
+  mcmc.sample3.chain1 = mcmc.out3$samples$chain1
+  mcmc.sample3.chain2 = mcmc.out3$samples$chain2
+  Mu = rbind(mcmc.sample3.chain1[, 3:389],mcmc.sample3.chain2[, 3:389])
+  m = nrow(mcmc.sample3.chain1)+nrow(mcmc.sample3.chain2)
+  Phis = rbind(mcmc.sample3.chain1[, 392:778],mcmc.sample3.chain2[, 392:778])
   n = length(y)
-  m = nrow(mcmc.sample3)
-  
   D = c()
   for(k in 1:m){
     D[k] = -2*sum(dbeta(y, shape1 = Phis[k,]*Mu[k,], shape2 = Phis[k,]*(1-Mu[k,]),log = TRUE))
@@ -504,7 +506,7 @@ for(t in 1:1){
                           monitors = c( 'beta0', 'phi','sigma2','mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est4 = mcmc.out4$summary[c(1, 389, 390), ]
+  bayes.est4 = mcmc.out4$summary$all.chains[c(1, 389, 390), ]
   Output4[[t]] <- bayes.est4
   beta0.M4[t] <- Output4[[t]][1, 1]
   phi.M4[t] <- Output4[[t]][2, 1]
@@ -519,11 +521,12 @@ for(t in 1:1){
   
   
   #DIC
-  mcmc.sample4 =mcmc.out4$sample
-  Mu = mcmc.sample4[, 2:388]
-  Phi = mcmc.sample4[, 389]
+  mcmc.sample4.chain1 = mcmc.out4$samples$chain1
+  mcmc.sample4.chain2 = mcmc.out4$samples$chain2
+  Mu = rbind(mcmc.sample4.chain1[, 2:388],mcmc.sample4.chain2[, 2:388])
+  Phi = c(mcmc.sample4.chain1[, 389],mcmc.sample4.chain2[, 389])
+  m = nrow(mcmc.sample4.chain1)+nrow(mcmc.sample4.chain2)
   n = length(y)
-  m = nrow(mcmc.sample4)
   D = rep(NA, m)
   for(k in 1:m){
     D[k] = -2*sum(log(((Phi[k]*log(0.5))/log(1 - Mu[k, ]^Phi[k]))*(y^(Phi[k] - 1))
@@ -532,7 +535,7 @@ for(t in 1:1){
   
   D.bar_theta = mean(D)
   
-  phi.M4 = mean(mcmc.sample4[, 389])
+  phi.M4 = mean(Phi)
   Mu.bar = apply(Mu, 2, "mean")
   D_theta.bar = -2*sum(log(((phi.M4*log(0.5))/log(1 - Mu.bar^phi.M4))*(y^(phi.M4 - 1))
                            *(1 - y^phi.M4)^((log(0.5)/log(1 - Mu.bar^phi.M4)) - 1)))
@@ -582,7 +585,7 @@ for(t in 1:1){
                           monitors = c( 'beta0', 'delta','nu','sigma2','ksi', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est5 = mcmc.out5$summary[c(1,2, 390, 391), ]
+  bayes.est5 = mcmc.out5$summary$all.chains[c(1,2, 390, 391), ]
   Output5[[t]] <- bayes.est5
   beta0.M5[t] <- Output5[[t]][1, 1]
   delta.M5[t] <- Output5[[t]][2, 1]
@@ -598,12 +601,15 @@ for(t in 1:1){
   
   
   #DIC
-  mcmc.sample5 = mcmc.out5$samples
-  Ksi = mcmc.sample5[, 3:389]
-  Delta = mcmc.sample5[, 2]
-  Nu = mcmc.sample5[, 390]
+  mcmc.sample5.chain1 = mcmc.out5$samples$chain1
+  mcmc.sample5.chain2 = mcmc.out5$samples$chain2
+  Ksi = rbind(mcmc.sample5.chain1[, 3:389],mcmc.sample5.chain2[, 3:389])
+  Delta = c(mcmc.sample5.chain1[, 2],mcmc.sample5.chain2[, 2])
+  Nu = c(mcmc.sample5.chain1[, 390],mcmc.sample5.chain2[, 390])
+  m = nrow(mcmc.sample5.chain1)+nrow(mcmc.sample5.chain2)
+  
+  
   n = length(y)
-  m = nrow(mcmc.sample5)
   D = rep(NA, m)
   for(k in 1:m){
     D[k] = -2*sum(log(((Delta[k] * (Nu[k] ^ (Nu[k] / 2))) / (y * (1 - y) * beta(0.5, Nu[k]/2))) * 
@@ -613,8 +619,8 @@ for(t in 1:1){
   D.bar_theta = mean(D)
   
   ksi.bar = apply(Ksi, 2, "mean")
-  Delta.bar = mean(mcmc.sample5[, 2])
-  Nu.bar = mean(mcmc.sample5[, 390])
+  Delta.bar = mean(Delta)
+  Nu.bar = mean(Nu)
   D_theta.bar = -2*sum(log(((Delta.bar * (Nu.bar ^ (Nu.bar / 2))) / (y * (1 - y) * beta(0.5, Nu.bar/2))) * 
                              (Nu.bar + (qt(0.5, df = Nu.bar) + Delta.bar * (log(y / (1 - y)) - log(ksi.bar / (1 - ksi.bar)))) ^ 2) ^ (- (Nu.bar + 1) / 2)))
   
@@ -665,7 +671,7 @@ for(t in 1:1){
                           monitors = c( 'beta0', 'omega','p','phi','sigma2','mu', 'y'),
                           summary = TRUE, WAIC = TRUE)
   
-  bayes.est6 = mcmc.out6$summary[c(1, 389, 390, 391,392), ]
+  bayes.est6 = mcmc.out6$summary$all.chains[c(1, 389, 390, 391,392), ]
   Output6[[t]] <- bayes.est6
   beta0.M6[t] <- Output6[[t]][1, 1]
   omega.M6[t] <- Output6[[t]][2, 1]
@@ -681,12 +687,16 @@ for(t in 1:1){
   
   
   # DIC
-  Mu = mcmc.sample6[, 2:388]
-  Omega = mcmc.sample6[, 389]
-  P = mcmc.sample6[, 390]
-  Phi = mcmc.sample6[, 391]
-  n = length(y)
-  m = nrow(mcmc.sample6)
+  mcmc.sample6.chain1 = mcmc.out6$samples$chain1
+  mcmc.sample6.chain2 = mcmc.out6$samples$chain2
+  Mu = rbind(mcmc.sample6.chain1[, 2:388],mcmc.sample6.chain2[, 2:388])
+  Omega = c(mcmc.sample6.chain1[, 389],mcmc.sample6.chain2[, 389])
+  P = c(mcmc.sample6.chain1[, 390],mcmc.sample6.chain2[, 390])
+  Phi = c(mcmc.sample6.chain1[, 391],mcmc.sample6.chain2[, 391])
+  m = nrow(mcmc.sample6.chain1)+nrow(mcmc.sample6.chain2)
+  
+  
+
   D = rep(NA, m)
   Wtilde=matrix(,m,n)
   Lambda1=matrix(,m,n)
@@ -704,8 +714,8 @@ for(t in 1:1){
   D.bar_theta = mean(D)
   Lambda1.bar = apply(Lambda1, 2, "mean")
   Lambda2.bar = apply(Lambda2, 2, "mean")
-  P.bar =mean( mcmc.sample6[, 390])
-  Phi.bar = mean(mcmc.sample6[, 391])
+  P.bar = mean(P)
+  Phi.bar = mean(Phi)
   D_theta.bar = -2*sum(log(P.bar*dbeta(y, shape1 = Phi.bar*Lambda1.bar, shape2 = Phi.bar*(1-Lambda1.bar))+
                              (1-P.bar)*dbeta(y, shape1 = Phi.bar*Lambda2.bar, shape2 = Phi.bar*(1-Lambda2.bar))))
   DIC6[t] = 2*D.bar_theta - D_theta.bar
@@ -723,4 +733,33 @@ for(t in 1:1){
   LPML6[t] = sum(log(CPO))
   
 }
+
+
+
+## Testing  Convergence
+library(coda)
+
+a1 = as.matrix(mcmc.out1$samples$chain1[, c(1, 389, 390)])
+b1 = as.matrix(mcmc.out1$samples$chain2[, c(1, 389, 390)])
+g1 = gelman.diag(list(mcmc(a1), mcmc(b1)))
+
+a2 = as.matrix(mcmc.out2$samples$chain1[, c(1, 2, 390, 391, 779)])
+b2 = as.matrix(mcmc.out2$samples$chain2[, c(1, 2, 390, 391, 779)])
+g2 = gelman.diag(list(mcmc(a2), mcmc(b2)))
+
+a3 = as.matrix(mcmc.out3$samples$chain1[, c(1, 2, 390, 391, 779)])
+b3 = as.matrix(mcmc.out3$samples$chain2[, c(1, 2, 390, 391, 779)])
+g3 = gelman.diag(list(mcmc(a3), mcmc(b3)))
+
+a4 = as.matrix(mcmc.out4$samples$chain1[, c(1, 389, 390)])
+b4 = as.matrix(mcmc.out4$samples$chain2[, c(1, 389, 390)])
+g4 = gelman.diag(list(mcmc(a4), mcmc(b4)))
+
+a5 = as.matrix(mcmc.out5$samples$chain1[, c(1,2, 390, 391)])
+b5 = as.matrix(mcmc.out5$samples$chain2[, c(1,2, 390, 391)])
+g5 = gelman.diag(list(mcmc(a5), mcmc(b5)))
+
+a6 = as.matrix(mcmc.out6$samples$chain1[, c(1, 389, 390, 391,392)])
+b6 = as.matrix(mcmc.out6$samples$chain2[, c(1, 389, 390, 391,392)])
+g6 = gelman.diag(list(mcmc(a6), mcmc(b6)))
 
